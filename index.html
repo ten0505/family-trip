@@ -999,15 +999,23 @@ function toggleGuide(e){ e.preventDefault();
   const g=document.getElementById('setupGuide');
   g.style.display = g.style.display==='none'?'block':'none';
 }
+// Firebaseコンソールの形式（キーに引用符なし・末尾カンマ・前置きあり）でも読めるように
+function parseLooseConfig(txt){
+  const m = txt.match(/\{[\s\S]*\}/); if(!m) return null;
+  let s = m[0];
+  try{ return JSON.parse(s); }catch(e){}
+  s = s.replace(/\/\/[^\n]*/g,'')                          // 行コメント除去
+       .replace(/([{,]\s*)([A-Za-z0-9_$]+)\s*:/g,'$1"$2":') // キーを引用符で囲む
+       .replace(/'/g,'"')                                   // シングル→ダブルクォート
+       .replace(/,(\s*[}\]])/g,'$1');                       // 末尾カンマ除去
+  try{ return JSON.parse(s); }catch(e){ return null; }
+}
 function saveSettings(){
   const cfgTxt=document.getElementById('s_config').value.trim();
   const room=document.getElementById('s_room').value.trim();
   if(!cfgTxt || !room){ alert('Firebase設定と共有IDの両方を入れてください。'); return; }
-  let cfg;
-  try{
-    // firebaseConfig = {...} の前置きが付いていても拾えるように
-    const m=cfgTxt.match(/\{[\s\S]*\}/); cfg=JSON.parse(m?m[0]:cfgTxt);
-  }catch(e){ alert('Firebase設定の形式が正しくありません（JSON）。'); return; }
+  const cfg = parseLooseConfig(cfgTxt);
+  if(!cfg){ alert('Firebase設定を読み取れませんでした。firebaseConfig の { ... } の部分を貼り付けてください。'); return; }
   if(!cfg.apiKey || !cfg.projectId){ alert('apiKey と projectId を含む設定を貼り付けてください。'); return; }
   localStorage.setItem(CFG_KEY, JSON.stringify({config:cfg, room}));
   closeSettings();
