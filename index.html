@@ -276,8 +276,9 @@
         <textarea id="s_config" placeholder='{ "apiKey":"...", "projectId":"...", ... }'></textarea>
       </div>
       <div class="full">
-        <label>② 共有ID（家族で同じ文字列にする。例：nomura-okinawa-2026）</label>
-        <input id="s_room" placeholder="nomura-trip">
+        <label>② 共有ID（家族全員で同じにする合言葉。例：ichika-riku）</label>
+        <input id="s_room" placeholder="ichika-riku" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false">
+        <p class="hint" style="margin:4px 0 0">大文字・スペースは自動で統一されます（Ichika Riku→ichika-riku）。<b>半角英数字とハイフン</b>がおすすめ。</p>
       </div>
     </div>
     <p class="hint" id="setupGuideToggle"><a href="#" onclick="toggleGuide(event)">▶ Firebaseの設定手順を表示</a></p>
@@ -1029,16 +1030,24 @@ function parseLooseConfig(txt){
        .replace(/,(\s*[}\]])/g,'$1');                       // 末尾カンマ除去
   try{ return JSON.parse(s); }catch(e){ return null; }
 }
+// 共有IDを正規化：端末ごとの大文字化・全角/半角スペース・前後空白のばらつきを吸収し、
+// 全員が必ず同じ保存先になるようにする（例:「Ichika Riku」「ichika　riku」→「ichika-riku」）
+function normalizeRoom(s){
+  return (s||'').trim().toLowerCase()
+    .replace(/[　\s]+/g,'-')   // 半角/全角スペース→ハイフン
+    .replace(/-+/g,'-')        // 連続ハイフンを1つに
+    .replace(/^-|-$/g,'');     // 前後のハイフン除去
+}
 function saveSettings(){
   const cfgTxt=document.getElementById('s_config').value.trim();
-  const room=document.getElementById('s_room').value.trim();
+  const room=normalizeRoom(document.getElementById('s_room').value);
   if(!cfgTxt || !room){ alert('Firebase設定と共有IDの両方を入れてください。'); return; }
   const cfg = parseLooseConfig(cfgTxt);
   if(!cfg){ alert('Firebase設定を読み取れませんでした。firebaseConfig の { ... } の部分を貼り付けてください。'); return; }
   if(!cfg.apiKey || !cfg.projectId){ alert('apiKey と projectId を含む設定を貼り付けてください。'); return; }
   localStorage.setItem(CFG_KEY, JSON.stringify({config:cfg, room}));
   closeSettings();
-  alert('保存しました。同期を開始します。');
+  alert('保存しました。共有ID「'+room+'」で同期を開始します。\n※家族全員がこの共有IDになるようにしてください。');
   location.reload();
 }
 function disconnectSync(){
