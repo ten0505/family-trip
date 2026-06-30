@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>家族旅行スケジュール＆準備物</title>
 <style>
   :root{
@@ -400,13 +403,15 @@ const sync = {
   async init(){
     let raw=null; try{ raw = JSON.parse(localStorage.getItem(CFG_KEY)); }catch(e){}
     if(!raw || !raw.config || !raw.room){ setSyncPill('local'); return; }
-    this.room = raw.room; this.cfg = raw.config;
+    // 保存済みIDも正規化（古いコードで保存された大文字/スペース揺れを吸収し、再保存不要で統一）
+    this.room = normalizeRoom(raw.room); this.cfg = raw.config;
+    if(this.room !== raw.room){ localStorage.setItem(CFG_KEY, JSON.stringify({config:raw.config, room:this.room})); }
     try{
       const appMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
       const fs = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
       const app = appMod.initializeApp(raw.config);
       this.db = fs.getFirestore(app);
-      this.ref = fs.doc(this.db, 'trips', raw.room);
+      this.ref = fs.doc(this.db, 'trips', this.room);
       this._fs = fs;
       this.enabled = true;
       setSyncPill('connecting');
