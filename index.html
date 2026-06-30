@@ -371,11 +371,18 @@ function migrate(s){
   s.participants = s.participants || blankState().participants;
   s.participants.forEach(p=>p.items = p.items || []);
   s._rev = s._rev || 0;
+  s._ts = s._ts || 0;
   return s;
+}
+function hasLocalData(){
+  return (state.events && state.events.length>0)
+    || (state.participants||[]).some(p=>(p.items||[]).length>0)
+    || (state.tripName && state.tripName!=='家族旅行');
 }
 let saveTimer=null;
 function save({push=true}={}){
   state._client = CLIENT_ID;
+  state._ts = Date.now();          // 変更時刻（同期の「新しい方」判定に使う）
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
   if(push && sync.enabled){
     clearTimeout(saveTimer);
@@ -388,7 +395,7 @@ const uid = ()=> Date.now().toString(36)+Math.random().toString(36).slice(2,6);
    Firebase 同期レイヤー（設定があるときだけ有効）
 ========================================================= */
 const sync = {
-  enabled:false, db:null, ref:null, unsub:null, room:null, cfg:null,
+  enabled:false, db:null, ref:null, unsub:null, room:null, cfg:null, _fs:null, lastError:null,
   async init(){
     let raw=null; try{ raw = JSON.parse(localStorage.getItem(CFG_KEY)); }catch(e){}
     if(!raw || !raw.config || !raw.room){ setSyncPill('local'); return; }
@@ -402,30 +409,42 @@ const sync = {
       this._fs = fs;
       this.enabled = true;
       setSyncPill('connecting');
-      // 既存データが無ければ自分のローカルを初期投入
+      // 接続時の突き合わせ：新しい方を採用（クラウドが新→取り込む／ローカルが新→送る）
       const snap = await fs.getDoc(this.ref);
-      if(!snap.exists()){ await this.push(); }
+      if(!snap.exists()){
+        await this.push();                               // クラウドが空→初投入
+      }else{
+        const remote = snap.data();
+        if((remote._ts||0) > (state._ts||0)){
+          this.adopt(remote);                            // クラウドが新しい
+        }else if((state._ts||0) > (remote._ts||0) || hasLocalData()){
+          await this.push();                             // ローカルが新しい/データ有→送る
+        }
+      }
       this.unsub = fs.onSnapshot(this.ref, (d)=>{
         if(!d.exists()) return;
         const remote = d.data();
-        if(remote._client === CLIENT_ID) return;           // 自分の書込はスキップ
-        if((remote._rev||0) < (state._rev||0)) return;     // 古い更新は無視
-        state = migrate(remote);
-        localStorage.setItem(STORE_KEY, JSON.stringify(state));
-        render(); refreshTripName();
-        setSyncPill('on');
-      }, (err)=>{ console.error(err); setSyncPill('err'); });
+        if(remote._client === CLIENT_ID) return;         // 自分の書込はスキップ
+        if((remote._ts||0) < (state._ts||0)) return;     // 自分の方が新しければ無視
+        this.adopt(remote);
+      }, (err)=>{ this.lastError=err; console.error(err); setSyncPill('err'); });
       setSyncPill('on');
-    }catch(e){ console.error(e); this.enabled=false; setSyncPill('err'); }
+    }catch(e){ this.lastError=e; console.error(e); this.enabled=false; setSyncPill('err'); }
+  },
+  adopt(remote){
+    state = migrate(remote);
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    render(); refreshTripName();
+    setSyncPill('on');
   },
   async push(){
     if(!this.enabled) return;
     try{
-      state._rev = (state._rev||0)+1;
       state._client = CLIENT_ID;
+      if(!state._ts) state._ts = Date.now();
       await this._fs.setDoc(this.ref, JSON.parse(JSON.stringify(state)));
       setSyncPill('on');
-    }catch(e){ console.error(e); setSyncPill('err'); }
+    }catch(e){ this.lastError=e; console.error(e); setSyncPill('err'); }
   },
   disconnect(){
     if(this.unsub) this.unsub();
